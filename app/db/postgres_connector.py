@@ -149,10 +149,10 @@ class PostgresConnector(BaseConnector):
             if object_name == '*':
                 # Get all tables
                 tables_query = """
-                SELECT tablename AS table_name
-                FROM pg_tables
-                WHERE schemaname = 'public'
-                ORDER BY tablename
+                SELECT table_name
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                ORDER BY table_name
                 """
 
                 print(f"Executing query to get all tables: {tables_query}")
@@ -162,12 +162,27 @@ class PostgresConnector(BaseConnector):
                 if not tables_result["data"]:
                     return "-- No tables found in the public schema"
                 
-                # Build DDL for each table
+                # Build DDL for each table with proper case handling
                 all_ddl = ""
                 for table in tables_result["data"]:
                     table_name = table["table_name"]
-                    table_ddl = self.get_ddl(table_name, "table")
-                    all_ddl += f"\n\n{table_ddl}"
+                    try:
+                        # For case sensitivity - put table name in quotes
+                        quoted_table_name = f'"{table_name}"'
+                        
+                        # Query to get table DDL
+                        query = f"""
+                        SELECT pg_get_tabledef('{quoted_table_name}'::regclass::oid) as ddl;
+                        """
+                        
+                        # Execute query
+                        table_ddl = self.execute_query(query)
+                        if table_ddl["data"]:
+                            all_ddl += f"\n\n{table_ddl['data'][0]['ddl']}"
+                        else:
+                            all_ddl += f"\n\n-- Table {quoted_table_name} definition not found"
+                    except Exception as e:
+                        all_ddl += f"\n\n-- Error getting table definition for {table_name}: {str(e)}"
                 
                 return all_ddl.strip()
             else:
